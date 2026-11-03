@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Credit Card Spend Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #000000;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .card-dark { background-color: #161821; }
+    .card-darker { background-color: #1c1f2b; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #000000; }
+    ::-webkit-scrollbar-thumb { background: #2d3142; border-radius: 2px; }
+  </style>
+</head>
+<body class="min-h-screen flex justify-center bg-black">
+
+  <!-- Mobile App Container -->
+  <div class="w-full max-w-md min-h-screen bg-black flex flex-col relative pb-24 select-none">
+
+    <!-- ==================== VIEW 1: HOME DASHBOARD ==================== -->
+    <div id="homeView" class="flex-1 flex flex-col p-4">
+      
+      <!-- Top Bar -->
+      <div class="flex justify-between items-center py-2 mb-4">
+        <div>
+          <h1 class="text-xl font-semibold tracking-wide text-white">Card Ledger</h1>
+          <p id="lastUpdated" class="text-[11px] text-slate-400">Offline preview loaded</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="toggleManageDrawer()" class="px-3 py-1.5 rounded-full card-dark text-xs font-medium text-slate-300 border border-slate-800 hover:text-white">
+            ⚙️ Cards
+          </button>
+          <button onclick="fetchBalances()" id="fetchBtn" title="Sync with Sheets" class="w-9 h-9 rounded-full card-dark flex items-center justify-center text-slate-300 border border-slate-800 hover:text-white">
+            🔄
+          </button>
+        </div>
+      </div>
+
+      <!-- Collapsible Card Manager Drawer -->
+      <div id="manageDrawer" class="hidden card-dark rounded-2xl p-4 mb-4 border border-slate-800 shadow-xl space-y-3">
+        <div class="flex justify-between items-center">
+          <h3 class="text-sm font-bold text-white">Manage & Add Cards</h3>
+          <button onclick="toggleManageDrawer()" class="text-slate-400 text-lg">&times;</button>
+        </div>
+
+        <div class="flex items-center gap-2 text-xs text-slate-300 bg-black/40 p-2.5 rounded-xl border border-slate-800">
+          <input type="checkbox" id="isSharedLimit" onchange="toggleSharedLimitUI()" class="w-4 h-4 accent-blue-500 cursor-pointer">
+          <label for="isSharedLimit" class="cursor-pointer">Shared Bank Limit Pool</label>
+        </div>
+
+        <form id="addCardForm" class="space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <input type="text" id="newBankName" placeholder="Bank (e.g. HDFC)" required
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+            <input type="text" id="newCardName" placeholder="Variant (e.g. Millennia)" required
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="number" id="newCardLimit" placeholder="Limit in ₹" required
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+            <input type="number" id="newCardDue" min="1" max="31" placeholder="Due Day (1-31)" required
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+          </div>
+          <button type="submit" id="saveCardBtn" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs transition">
+            + Save / Update Card
+          </button>
+        </form>
+      </div>
+
+      <!-- Summary Cards Banner -->
+      <div class="grid grid-cols-2 gap-3 mb-5">
+        <div class="card-dark rounded-2xl p-3.5 border border-slate-800/80 flex flex-col justify-between">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-[11px] text-slate-400">Total Owed</span>
+            <span class="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-xs font-bold">↗</span>
+          </div>
+          <p id="totalOwedBanner" class="text-base font-bold text-rose-400">₹0.00</p>
+        </div>
+
+        <div class="card-dark rounded-2xl p-3.5 border border-slate-800/80 flex flex-col justify-between">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-[11px] text-slate-400">Total Available</span>
+            <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold">↙</span>
+          </div>
+          <p id="totalAvailBanner" class="text-base font-bold text-emerald-400">₹0.00</p>
+        </div>
+      </div>
+
+      <!-- Filter Banner if active -->
+      <div id="filterBanner" class="hidden card-darker border border-blue-500/40 px-3.5 py-2 rounded-xl mb-3 flex justify-between items-center text-xs">
+        <span id="filterBannerText" class="text-blue-300">Filtered Card</span>
+        <button onclick="setCardFilter(null)" class="text-blue-400 font-semibold underline">Show All</button>
+      </div>
+
+      <!-- Active Cards Tiles Header -->
+      <div class="flex justify-between items-center mb-3">
+        <h2 id="activeCardsCount" class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Cards</h2>
+        <button onclick="toggleSortOrder()" title="Sort order" class="text-slate-400 text-xs hover:text-white">Sort ↕</button>
+      </div>
+
+      <!-- Cards Grid / List -->
+      <div id="cardsContainer" class="space-y-3 mb-6">
+        <div class="p-6 text-center text-slate-500 text-sm animate-pulse card-dark rounded-2xl">Loading cards...</div>
+      </div>
+    </div>
+
+    <!-- ==================== VIEW 2: TRANSACTIONS TAB ==================== -->
+    <div id="txView" class="hidden flex-1 flex flex-col p-4">
+      <div class="flex justify-between items-center py-2 mb-4">
+        <h1 class="text-xl font-semibold text-white">Recent Activity</h1>
+      </div>
+      <div id="recentContainer" class="space-y-2.5 flex-1 overflow-y-auto"></div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <div class="fixed bottom-0 left-0 right-0 max-w-md mx-auto h-16 card-dark border-t border-slate-800/80 flex justify-around items-center z-20 px-6">
+      <button onclick="switchTab('home')" id="navHomeBtn" class="flex flex-col items-center gap-1 text-white">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+        </svg>
+        <span class="text-[11px] font-medium">Cards</span>
+      </button>
+
+      <!-- Center Floating + Button -->
+      <button onclick="openEntryModal()" class="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg -mt-6 transition transform active:scale-95">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4"/>
+        </svg>
+      </button>
+
+      <button onclick="switchTab('transactions')" id="navTxBtn" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+          <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/>
+        </svg>
+        <span class="text-[11px] font-medium">Activity</span>
+      </button>
+    </div>
+
+    <!-- ==================== MODAL: ADD / EDIT TRANSACTION ==================== -->
+    <div id="entryModal" class="fixed inset-0 max-w-md mx-auto bg-black/80 backdrop-blur-sm z-50 hidden flex-col p-4 justify-end sm:justify-center">
+      <div class="card-dark rounded-2xl p-5 border border-slate-800 shadow-2xl max-h-[90vh] overflow-y-auto">
+        
+        <div class="flex justify-between items-center pb-3 mb-4 border-b border-slate-800">
+          <h3 id="formTitle" class="text-base font-bold text-white">Log Spend / Payment</h3>
+          <button onclick="closeEntryModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+
+        <form id="entryForm" class="space-y-3.5">
+          <input type="hidden" id="editRowId" value="">
+
+          <!-- Transaction Type Toggle -->
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="typeSpendBtn" onclick="setTxType('Spend')" class="py-2.5 rounded-xl text-xs font-semibold transition border border-blue-600 bg-blue-600 text-white">
+              Card Spend (+)
+            </button>
+            <button type="button" id="typePayBtn" onclick="setTxType('Payment')" class="py-2.5 rounded-xl text-xs font-semibold transition border border-slate-800 bg-black text-slate-300">
+              Bill Payment (-)
+            </button>
+          </div>
+          <input type="hidden" id="type" value="Spend">
+
+          <!-- Amount & Date -->
+          <div class="grid grid-cols-2 gap-2">
+            <div class="card-darker rounded-xl px-3 py-2.5 border border-slate-800">
+              <label class="text-[10px] text-slate-400 uppercase font-semibold block mb-0.5">Amount (₹)</label>
+              <input type="number" id="amount" step="0.01" placeholder="0.00" required
+                class="w-full bg-transparent text-white text-sm font-bold focus:outline-none placeholder-slate-600">
+            </div>
+            <div class="card-darker rounded-xl px-3 py-2.5 border border-slate-800">
+              <label class="text-[10px] text-slate-400 uppercase font-semibold block mb-0.5">Date</label>
+              <input type="date" id="date" required
+                class="w-full bg-transparent text-slate-200 text-xs focus:outline-none [color-scheme:dark]">
+            </div>
+          </div>
+
+          <!-- Card & Category -->
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase font-semibold block mb-1">Select Card</label>
+              <select id="card" required class="w-full px-3 py-2.5 rounded-xl card-darker border border-slate-800 text-xs text-white focus:outline-none focus:border-blue-500"></select>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase font-semibold block mb-1">Category</label>
+              <select id="category" required class="w-full px-3 py-2.5 rounded-xl card-darker border border-slate-800 text-xs text-white focus:outline-none focus:border-blue-500">
+                <option value="Shopping & General">Shopping & General</option>
+                <option value="Groceries">Groceries</option>
+                <option value="Fuel">Fuel</option>
+                <option value="Bills & Utilities">Bills & Utilities</option>
+                <option value="Dining & Food">Dining & Food</option>
+                <option value="CC Bill Repayment">CC Bill Repayment</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div>
+            <label class="text-[10px] text-slate-400 uppercase font-semibold block mb-1">Notes / Merchant</label>
+            <input type="text" id="notes" placeholder="e.g. Amazon, Fuel bill"
+              class="w-full px-3 py-2.5 rounded-xl card-darker border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500">
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="pt-2 flex gap-2">
+            <button type="submit" id="submitBtn" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs transition">
+              Save Entry
+            </button>
+            <button type="button" id="cancelEditBtn" style="display:none;" onclick="cancelEdit()" class="px-4 py-3 bg-slate-800 text-slate-300 font-semibold rounded-xl text-xs hover:bg-slate-700">
+              Cancel
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw48LzDFpoYytE2fO23547_qLWC8NJ2wY6H6OfIgpCP3cH3HEBBXDd5BPyLft5Ej0sd/exec';
+
+    const DEFAULT_CARDS = {
+      'HDFC Millennia':   { limit: 150000, dueDay: 5,  bank: 'HDFC',  shared: true },
+      'HDFC Tata Neu':    { limit: 150000, dueDay: 5,  bank: 'HDFC',  shared: true },
+      'SBI Cashback':     { limit: 100000, dueDay: 12, bank: 'SBI',   shared: false },
+      'ICICI Amazon Pay': { limit: 200000, dueDay: 18, bank: 'ICICI', shared: false }
+    };
+
+    let recentCache = [];
+    let activeCardFilter = null;
+    let sortAscending = true;
+    document.getElementById('date').valueAsDate = new Date();
+
+    function toggleManageDrawer() {
+      const drawer = document.getElementById('manageDrawer');
+      drawer.classList.toggle('hidden');
+    }
+
+    function toggleSharedLimitUI() {
+      const isShared = document.getElementById('isSharedLimit').checked;
+      const limitInput = document.getElementById('newCardLimit');
+      limitInput.placeholder = isShared ? 'Shared Bank Limit (₹)' : 'Card Limit (₹)';
+    }
+
+    function setTxType(type) {
+      document.getElementById('type').value = type;
+      const spendBtn = document.getElementById('typeSpendBtn');
+      const payBtn = document.getElementById('typePayBtn');
+      if (type === 'Spend') {
+        spendBtn.className = "py-2.5 rounded-xl text-xs font-semibold transition border border-blue-600 bg-blue-600 text-white";
+        payBtn.className = "py-2.5 rounded-xl text-xs font-semibold transition border border-slate-800 bg-black text-slate-300";
+      } else {
+        payBtn.className = "py-2.5 rounded-xl text-xs font-semibold transition border border-emerald-600 bg-emerald-600 text-white";
+        spendBtn.className = "py-2.5 rounded-xl text-xs font-semibold transition border border-slate-800 bg-black text-slate-300";
+      }
+    }
+
+    function populateDropdown(cardConfig) {
+      const cardSelect = document.getElementById('card');
+      const currentVal = cardSelect.value;
+      cardSelect.innerHTML = '';
+
+      const groups = {};
+      Object.keys(cardConfig).forEach(cardName => {
+        const cfg = cardConfig[cardName];
+        const bankName = (cfg.bank && cfg.bank.trim()) ? cfg.bank.trim() : 'Other Cards';
+        if (!groups[bankName]) groups[bankName] = [];
+        groups[bankName].push({ name: cardName, shared: Boolean(cfg.shared) });
+      });
+
+      Object.keys(groups).forEach(bankName => {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `🏦 ${bankName}`;
+        groups[bankName].forEach(item => {
+          const opt = document.createElement('option');
+          opt.value = item.name;
+          opt.textContent = item.shared ? `${item.name} (Shared)` : item.name;
+          optgroup.appendChild(opt);
+        });
+        cardSelect.appendChild(optgroup);
+      });
+
+      if (currentVal && cardConfig[currentVal]) cardSelect.value = currentVal;
+    }
+
+    function setCardFilter(cardName) {
+      activeCardFilter = cardName;
+      renderActivityList();
+
+      const banner = document.getElementById('filterBanner');
+      if (cardName) {
+        banner.classList.remove('hidden');
+        document.getElementById('filterBannerText').innerHTML = `Filtered by: <strong>${cardName}</strong>`;
+        switchTab('transactions');
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+
+    function switchTab(tab) {
+      const homeView = document.getElementById('homeView');
+      const txView = document.getElementById('txView');
+      const homeBtn = document.getElementById('navHomeBtn');
+      const txBtn = document.getElementById('navTxBtn');
+
+      if (tab === 'home') {
+        homeView.classList.remove('hidden');
+        txView.classList.add('hidden');
+        homeBtn.className = "flex flex-col items-center gap-1 text-white";
+        txBtn.className = "flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300";
+      } else {
+        homeView.classList.add('hidden');
+        txView.classList.remove('hidden');
+        txBtn.className = "flex flex-col items-center gap-1 text-white";
+        homeBtn.className = "flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300";
+        renderActivityList();
+      }
+    }
+
+    function renderActivityList() {
+      const recentDiv = document.getElementById('recentContainer');
+      let listToRender = recentCache;
+
+      if (activeCardFilter) {
+        listToRender = recentCache.filter(t => t.card.toLowerCase() === activeCardFilter.toLowerCase());
+      }
+
+      recentDiv.innerHTML = listToRender.length ? listToRender.map((t) => {
+        const originalIndex = recentCache.indexOf(t);
+        const isPay = t.type === 'Payment';
+        const summary = `${t.card} - ₹${t.amount} (${t.category})`.replace(/'/g, "\\'");
+        return `
+        <div class="card-dark p-3.5 rounded-2xl flex justify-between items-center border border-slate-800/80">
+          <div>
+            <div class="flex items-center gap-2">
+              <h4 class="text-xs font-semibold text-white">${t.card}</h4>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${t.category}</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">${String(t.date).slice(0, 10)} ${t.notes ? '• ' + t.notes : ''}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-bold ${isPay ? 'text-emerald-400' : 'text-rose-400'}">
+              ${isPay ? '-' : '+'}₹${Number(t.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </span>
+            ${t.rowId ? `
+              <div class="flex gap-1">
+                <button class="w-7 h-7 rounded-lg card-darker border border-slate-700 flex items-center justify-center text-xs text-slate-300 hover:text-white" title="Edit" onclick="startEdit(${originalIndex})">✏️</button>
+                <button class="w-7 h-7 rounded-lg card-darker border border-slate-700 flex items-center justify-center text-xs text-rose-400 hover:bg-rose-950/40" title="Delete" onclick="deleteTransaction(${t.rowId}, '${summary}')">🗑️</button>
+              </div>
+            ` : ''}
+          </div>
+        </div>`;
+      }).join('') : `<div class="p-8 text-center text-slate-500 text-xs card-dark rounded-2xl">No transactions found ${activeCardFilter ? 'for ' + activeCardFilter : ''}.</div>`;
+    }
+
+    function openEntryModal() {
+      cancelEdit();
+      document.getElementById('entryModal').classList.remove('hidden');
+      document.getElementById('entryModal').classList.add('flex');
+    }
+
+    function closeEntryModal() {
+      document.getElementById('entryModal').classList.add('hidden');
+      document.getElementById('entryModal').classList.remove('flex');
+    }
+
+    function startEdit(index) {
+      const tx = recentCache[index];
+      if (!tx) return;
+
+      document.getElementById('editRowId').value = tx.rowId;
+      setTxType(tx.type || 'Spend');
+      document.getElementById('date').value = String(tx.date).slice(0, 10);
+
+      const cardSelect = document.getElementById('card');
+      if (![...cardSelect.options].some(o => o.value === tx.card)) {
+        const opt = document.createElement('option');
+        opt.value = tx.card;
+        opt.textContent = tx.card;
+        cardSelect.appendChild(opt);
+      }
+      cardSelect.value = tx.card;
+
+      document.getElementById('category').value = tx.category;
+      document.getElementById('amount').value = tx.amount;
+      document.getElementById('notes').value = tx.notes || '';
+
+      document.getElementById('formTitle').innerText = `✏️ Edit Entry (Row #${tx.rowId})`;
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.innerText = 'Update Entry';
+      document.getElementById('cancelEditBtn').style.display = 'inline-block';
+      openEntryModal();
+    }
+
+    function cancelEdit() {
+      document.getElementById('editRowId').value = '';
+      document.getElementById('amount').value = '';
+      document.getElementById('notes').value = '';
+      document.getElementById('date').valueAsDate = new Date();
+      setTxType('Spend');
+      document.getElementById('formTitle').innerText = 'Log Spend / Payment';
+      document.getElementById('submitBtn').innerText = 'Save Entry';
+      document.getElementById('cancelEditBtn').style.display = 'none';
+    }
+
+    async function deleteTransaction(rowId, summaryText) {
+      if (!confirm(`Delete this entry permanently from Google Sheets?\n(${summaryText})`)) return;
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'deleteTransaction', rowId: rowId })
+        });
+        if (document.getElementById('editRowId').value == rowId) cancelEdit();
+        await fetchBalances();
+      } catch (err) {
+        alert('Failed to delete entry.');
+      }
+    }
+
+    function getDueBadge(dueDay, owedAmount) {
+      if (owedAmount <= 0) return { text: '✓ No Dues', cls: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' };
+      if (!dueDay) return { text: 'No Due Date', cls: 'bg-slate-800 text-slate-400 border border-slate-700' };
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let nextDue = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      if (nextDue < today) nextDue = new Date(today.getFullYear(), today.getMonth() + 1, dueDay);
+
+      const diffDays = Math.round((nextDue - today) / (1000 * 60 * 60 * 24));
+      const dateStr = nextDue.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+      if (diffDays === 0) return { text: `⚠️ Due Today`, cls: 'bg-rose-500/20 text-rose-400 border border-rose-500/30' };
+      if (diffDays <= 3)  return { text: `⚠️ Due ${diffDays}d (${dateStr})`, cls: 'bg-rose-500/20 text-rose-400 border border-rose-500/30' };
+      if (diffDays <= 7)  return { text: `⏳ Due ${diffDays}d (${dateStr})`, cls: 'bg-amber-500/20 text-amber-400 border border-amber-500/30' };
+      return { text: `Due ${dateStr}`, cls: 'bg-slate-800 text-slate-300 border border-slate-700' };
+    }
+
+    function getBarColor(utilPct) {
+      if (utilPct >= 50) return '#ef4444';
+      if (utilPct >= 30) return '#f59e0b';
+      return '#10b981';
+    }
+
+    function renderDashboard(data, timestampLabel) {
+      const cardConfig = (data.cardConfig && Object.keys(data.cardConfig).length) ? data.cardConfig : DEFAULT_CARDS;
+      populateDropdown(cardConfig);
+
+      const cardsDiv = document.getElementById('cardsContainer');
+      cardsDiv.innerHTML = '';
+
+      const sheetCards = data.cards || {};
+      let activeCardNames = Object.keys(cardConfig);
+
+      activeCardNames.sort((a, b) => sortAscending ? a.localeCompare(b) : b.localeCompare(a));
+
+      const sharedPools = {};
+      activeCardNames.forEach(cardName => {
+        const cfg = cardConfig[cardName] || {};
+        const stats = sheetCards[cardName] || { spent: 0, paid: 0, owed: 0 };
+        const isShared = Boolean(cfg.shared) && Boolean(cfg.bank);
+
+        if (isShared) {
+          const bankKey = cfg.bank.trim().toLowerCase();
+          if (!sharedPools[bankKey]) {
+            sharedPools[bankKey] = { bankName: cfg.bank.trim(), limit: Number(cfg.limit) || 0, totalOwed: 0, count: 0 };
+          }
+          if (Number(cfg.limit) > 0) sharedPools[bankKey].limit = Number(cfg.limit);
+          sharedPools[bankKey].totalOwed += Math.max(0, stats.owed);
+          sharedPools[bankKey].count += 1;
+        }
+      });
+
+      let totalOwedAll = 0;
+      let totalLimitAll = 0;
+      const countedSharedBanks = new Set();
+      let cardsHtml = '';
+
+      activeCardNames.forEach(cardName => {
+        const stats = sheetCards[cardName] || { spent: 0, paid: 0, owed: 0 };
+        const cfg = cardConfig[cardName] || { limit: 100000, dueDay: 1, bank: '', shared: false };
+
+        const cardOwed = Math.max(0, stats.owed);
+        totalOwedAll += stats.owed;
+
+        const isShared = Boolean(cfg.shared) && Boolean(cfg.bank);
+        const bankKey = isShared ? cfg.bank.trim().toLowerCase() : null;
+        const pool = isShared ? sharedPools[bankKey] : null;
+
+        if (isShared) {
+          if (!countedSharedBanks.has(bankKey)) {
+            totalLimitAll += pool.limit;
+            countedSharedBanks.add(bankKey);
+          }
+        } else {
+          totalLimitAll += (Number(cfg.limit) || 0);
+        }
+
+        const effectiveLimit = isShared ? pool.limit : (Number(cfg.limit) || 0);
+        const effectiveUsed = isShared ? pool.totalOwed : cardOwed;
+        const availableBalance = Math.max(0, effectiveLimit - effectiveUsed);
+
+        const utilPct = effectiveLimit > 0 ? Math.min(100, (effectiveUsed / effectiveLimit) * 100) : 0;
+        const barColor = getBarColor(utilPct);
+        const dueInfo = getDueBadge(cfg.dueDay, stats.owed);
+        const isCleared = stats.owed <= 0;
+        const safeName = cardName.replace(/'/g, "\\'");
+
+        const bankBadgeHtml = cfg.bank
+          ? `<span class="text-[10px] px-2 py-0.5 rounded-md font-medium bg-slate-800 text-slate-300 border border-slate-700">${cfg.bank}${isShared ? ' • Shared Pool' : ''}</span>`
+          : '';
+
+        cardsHtml += `
+          <div class="card-dark p-4 rounded-2xl border border-slate-800/80 shadow-sm relative cursor-pointer hover:border-slate-700 transition" onclick="setCardFilter('${safeName}')">
+            <div class="flex justify-between items-start gap-2 mb-2.5">
+              <div class="min-w-0">
+                <h4 class="font-bold text-sm text-white truncate">${cardName}</h4>
+                <div class="flex items-center gap-2 mt-1">${bankBadgeHtml}</div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-[10px] px-2 py-0.5 rounded font-medium ${dueInfo.cls}">${dueInfo.text}</span>
+                <button class="text-slate-500 hover:text-rose-400 text-xs px-1" title="Delete card" onclick="event.stopPropagation(); deleteCard('${safeName}')">✕</button>
+              </div>
+            </div>
+
+            <div class="flex justify-between items-baseline mb-3">
+              <span class="text-xs text-slate-400">Current Owed</span>
+              <span class="text-lg font-bold ${isCleared ? 'text-emerald-400' : 'text-rose-400'}">₹${stats.owed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
+
+            <div class="mb-3">
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                <span>${isShared ? 'Pool Used' : 'Used'}: ${utilPct.toFixed(1)}%</span>
+                <span>Limit: ₹${(effectiveLimit / 1000).toFixed(0)}k</span>
+              </div>
+              <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-300" style="width: ${utilPct}%; background: ${barColor};"></div>
+              </div>
+            </div>
+
+            <div class="flex justify-between items-center pt-2.5 border-t border-slate-800/80 text-[11px] text-slate-400">
+              <span class="text-slate-300 font-medium">${isShared ? 'Bank Avail' : 'Avail'}: ₹${availableBalance.toLocaleString('en-IN')}</span>
+              <span>Paid: ₹${stats.paid.toLocaleString('en-IN')}</span>
+            </div>
+          </div>`;
+      });
+
+      document.getElementById('totalOwedBanner').innerText = `₹${totalOwedAll.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      document.getElementById('totalAvailBanner').innerText = `₹${Math.max(0, totalLimitAll - Math.max(0, totalOwedAll)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      document.getElementById('activeCardsCount').innerText = `Active Cards (${activeCardNames.length})`;
+
+      cardsDiv.innerHTML = cardsHtml;
+      recentCache = data.recent || [];
+      renderActivityList();
+      document.getElementById('lastUpdated').innerText = timestampLabel;
+    }
+
+    const cached = localStorage.getItem('cardDashboardCache');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      renderDashboard(parsed.data, 'Cached: ' + parsed.time);
+    } else {
+      renderDashboard({ cardConfig: DEFAULT_CARDS, cards: {}, recent: [] }, 'Offline mode • Tap 🔄 to sync');
+    }
+
+    async function fetchBalances() {
+      const btn = document.getElementById('fetchBtn');
+      btn.classList.add('animate-spin');
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const data = await res.json();
+        const now = new Date().toLocaleString('en-IN');
+        localStorage.setItem('cardDashboardCache', JSON.stringify({ data, time: now }));
+        renderDashboard(data, 'Synced: ' + now);
+      } catch (err) {
+        alert('Could not connect to Google Sheets. Check your deployment URL.');
+      } finally {
+        btn.classList.remove('animate-spin');
+      }
+    }
+
+    document.getElementById('addCardForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('saveCardBtn');
+      btn.disabled = true;
+      btn.innerText = 'Saving...';
+
+      const bank = document.getElementById('newBankName').value.trim();
+      const variant = document.getElementById('newCardName').value.trim();
+      const fullCardName = variant.toLowerCase().startsWith(bank.toLowerCase()) ? variant : `${bank} ${variant}`;
+
+      const payload = {
+        action: 'addCard',
+        bank: bank,
+        card: fullCardName,
+        limit: document.getElementById('newCardLimit').value,
+        dueDay: document.getElementById('newCardDue').value,
+        shared: document.getElementById('isSharedLimit').checked
+      };
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        document.getElementById('newBankName').value = '';
+        document.getElementById('newCardName').value = '';
+        document.getElementById('newCardLimit').value = '';
+        document.getElementById('newCardDue').value = '';
+        document.getElementById('isSharedLimit').checked = false;
+        toggleManageDrawer();
+        await fetchBalances();
+      } catch (err) {
+        alert('Failed to save card.');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '+ Save / Update Card';
+      }
+    });
+
+    async function deleteCard(cardName) {
+      if (!confirm(`Remove "${cardName}" from your active cards list?`)) return;
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'deleteCard', card: cardName })
+        });
+        if (activeCardFilter === cardName) setCardFilter(null);
+        await fetchBalances();
+      } catch (err) {
+        alert('Failed to remove card.');
+      }
+    }
+
+    document.getElementById('entryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const editRowId = document.getElementById('editRowId').value;
+      const isEditing = Boolean(editRowId);
+
+      btn.disabled = true;
+      btn.innerText = isEditing ? 'Updating...' : 'Saving...';
+
+      const payload = {
+        action: isEditing ? 'editTransaction' : 'addTransaction',
+        rowId: isEditing ? Number(editRowId) : undefined,
+        type: document.getElementById('type').value,
+        date: document.getElementById('date').value,
+        card: document.getElementById('card').value,
+        category: document.getElementById('category').value,
+        amount: document.getElementById('amount').value,
+        notes: document.getElementById('notes').value
+      };
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        closeEntryModal();
+        cancelEdit();
+        await fetchBalances();
+      } catch (err) {
+        alert('Failed to save entry.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    function toggleSortOrder() {
+      sortAscending = !sortAscending;
+      const cached = localStorage.getItem('cardDashboardCache');
+      if (cached) renderDashboard(JSON.parse(cached).data, document.getElementById('lastUpdated').innerText);
+    }
+  </script>
+</body>
+</html>
