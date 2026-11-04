@@ -1,6 +1,6 @@
 {
-  "name": "Sree Ledger",
-  "short_name": "SreeLedger",
+  "name": "cardsLedger",
+  "short_name": "Cards",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#000000",
